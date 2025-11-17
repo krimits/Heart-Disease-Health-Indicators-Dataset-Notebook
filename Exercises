@@ -1,0 +1,303 @@
+# ============================================================
+# Cancer Prediction Notebook - Λύσεις Ασκήσεων
+# Θέματα:
+# 1. Αλλαγή hyperparameters (KNN: n_neighbors, SVC: C & gamma)
+# 2. ROC Curves & AUC (LogReg, SVC, RandomForest)
+# 3. Threshold Tuning (decision threshold 0.5 vs 0.3)
+# 4. Feature importance (RandomForest)
+#
+# Το κελί είναι αυτοτελές: φορτώνει δεδομένα, εκπαιδεύει μοντέλα,
+# και στη συνέχεια λύνει όλες τις ασκήσεις.
+# ============================================================
+
+# -----------------------------
+# 0. Imports & Ρυθμίσεις
+# -----------------------------
+import pandas as pd
+import numpy as np
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    classification_report,
+    roc_curve,
+    roc_auc_score,
+    precision_recall_fscore_support
+)
+
+pd.set_option('display.max_columns', 50)
+pd.set_option('display.precision', 3)
+
+print("=== Βήμα 0: Εισαγωγή βιβλιοθηκών - ΟΚ ===")
+
+# -----------------------------
+# 1. Φόρτωση & Προετοιμασία Δεδομένων (όπως στο βασικό notebook)
+# -----------------------------
+cancer = pd.read_csv('https://github.com/YBIFoundation/Dataset/raw/main/Cancer.csv')
+
+print("\n=== Βήμα 1: Πρώτες γραμμές δεδομένων ===")
+display(cancer.head())
+
+# Target και Features
+y = cancer['diagnosis']
+X = cancer.drop(['diagnosis', 'id', 'Unnamed: 32'], axis=1)
+
+# Encoding M/B σε 1/0
+y = y.replace({'M': 1, 'B': 0})
+
+# Train / Test split (stratified)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    test_size=0.2,
+    random_state=2529,
+    stratify=y
+)
+
+print("\n=== Βήμα 2: Σχήματα train/test ===")
+print("X_train:", X_train.shape, " X_test:", X_test.shape)
+print("y_train:", y_train.shape, " y_test:", y_test.shape)
+
+# Standardization για τα μοντέλα που χρειάζονται scaling
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print("\n=== Βήμα 3: Standardization ολοκληρώθηκε ===")
+
+# -----------------------------
+# 2. Βασικά Μοντέλα (LogReg, KNN, SVC, RF)
+# -----------------------------
+# Logistic Regression
+log_reg = LogisticRegression(max_iter=1000, random_state=2529)
+log_reg.fit(X_train_scaled, y_train)
+y_pred_lr = log_reg.predict(X_test_scaled)
+
+# KNN (baseline με n_neighbors=5)
+knn = KNeighborsClassifier(n_neighbors=5)
+knn.fit(X_train_scaled, y_train)
+y_pred_knn = knn.predict(X_test_scaled)
+
+# SVC (baseline)
+svc = SVC(kernel='rbf', probability=True, random_state=2529)
+svc.fit(X_train_scaled, y_train)
+y_pred_svc = svc.predict(X_test_scaled)
+
+# Random Forest
+rf = RandomForestClassifier(n_estimators=100, random_state=2529)
+rf.fit(X_train, y_train)
+y_pred_rf = rf.predict(X_test)
+
+print("\n=== Βήμα 4: Βασικές accuracies ===")
+print("Logistic Regression Accuracy:", accuracy_score(y_test, y_pred_lr))
+print("KNN (k=5) Accuracy:", accuracy_score(y_test, y_pred_knn))
+print("SVC Accuracy:", accuracy_score(y_test, y_pred_svc))
+print("RandomForest Accuracy:", accuracy_score(y_test, y_pred_rf))
+
+# ============================================================
+# ΑΣΚΗΣΗ 1: Αλλαγή Hyperparameters
+#   - KNN: διαφορετικά n_neighbors
+#   - SVC: διαφορετικά C & gamma
+# ============================================================
+
+# -----------------------------
+# 1A. KNN: Μελέτη n_neighbors
+# -----------------------------
+print("\n=== ΑΣΚΗΣΗ 1A: KNN - Επίδραση του n_neighbors στην απόδοση ===")
+
+k_values = range(1, 16)  # από 1 έως 15
+knn_accuracies = []
+
+for k in k_values:
+    knn_k = KNeighborsClassifier(n_neighbors=k)
+    knn_k.fit(X_train_scaled, y_train)
+    y_pred_k = knn_k.predict(X_test_scaled)
+    acc_k = accuracy_score(y_test, y_pred_k)
+    knn_accuracies.append(acc_k)
+    print(f"k={k}: Accuracy={acc_k:.4f}")
+
+# Οπτικοποίηση: accuracy vs k
+plt.figure(figsize=(8, 4))
+plt.plot(k_values, knn_accuracies, marker='o')
+plt.title("KNN: Accuracy στο test set vs n_neighbors")
+plt.xlabel("n_neighbors (k)")
+plt.ylabel("Accuracy")
+plt.xticks(k_values)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 1B. SVC: Μελέτη C & gamma (grid μικρής κλίμακας)
+# -----------------------------
+print("\n=== ΑΣΚΗΣΗ 1B: SVC - Επίδραση C & gamma στην απόδοση ===")
+
+C_values = [0.1, 1, 10]
+gamma_values = [0.001, 0.01, 0.1, 1]
+
+svc_results = []
+
+for C_val in C_values:
+    for gamma_val in gamma_values:
+        svc_model = SVC(kernel='rbf', C=C_val, gamma=gamma_val, probability=True, random_state=2529)
+        svc_model.fit(X_train_scaled, y_train)
+        y_pred_svc_grid = svc_model.predict(X_test_scaled)
+        acc_svc_grid = accuracy_score(y_test, y_pred_svc_grid)
+        svc_results.append((C_val, gamma_val, acc_svc_grid))
+        print(f"C={C_val}, gamma={gamma_val}: Accuracy={acc_svc_grid:.4f}")
+
+# Μετατροπή σε DataFrame για οπτικοποίηση
+svc_results_df = pd.DataFrame(svc_results, columns=['C', 'gamma', 'Accuracy'])
+
+plt.figure(figsize=(8, 5))
+pivot = svc_results_df.pivot(index='C', columns='gamma', values='Accuracy')
+sns.heatmap(pivot, annot=True, fmt=".3f", cmap="viridis")
+plt.title("SVC Accuracy για διαφορετικά C & gamma (test set)")
+plt.ylabel("C")
+plt.xlabel("gamma")
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# ΑΣΚΗΣΗ 2: ROC Curves & AUC
+#   - Logistic Regression, SVC, RandomForest
+# ============================================================
+
+print("\n=== ΑΣΚΗΣΗ 2: ROC Curves & AUC ===")
+
+# Πιθανότητες / scores για κάθε μοντέλο
+# Logistic Regression: predict_proba
+y_proba_lr = log_reg.predict_proba(X_test_scaled)[:, 1]
+
+# SVC: decision_function ή predict_proba (έχουμε probability=True)
+# για ROC/AUC αρκεί και το decision_function, αλλά εδώ θα χρησιμοποιήσουμε predict_proba
+y_proba_svc = svc.predict_proba(X_test_scaled)[:, 1]
+
+# RandomForest: predict_proba
+y_proba_rf = rf.predict_proba(X_test)[:, 1]
+
+# Υπολογισμός ROC curves
+fpr_lr, tpr_lr, _ = roc_curve(y_test, y_proba_lr)
+fpr_svc, tpr_svc, _ = roc_curve(y_test, y_proba_svc)
+fpr_rf, tpr_rf, _ = roc_curve(y_test, y_proba_rf)
+
+# Υπολογισμός AUC
+auc_lr = roc_auc_score(y_test, y_proba_lr)
+auc_svc = roc_auc_score(y_test, y_proba_svc)
+auc_rf = roc_auc_score(y_test, y_proba_rf)
+
+print(f"Logistic Regression AUC: {auc_lr:.4f}")
+print(f"SVC AUC: {auc_svc:.4f}")
+print(f"RandomForest AUC: {auc_rf:.4f}")
+
+# Οπτικοποίηση ROC curves
+plt.figure(figsize=(7, 6))
+plt.plot(fpr_lr, tpr_lr, label=f"LogReg (AUC = {auc_lr:.3f})")
+plt.plot(fpr_svc, tpr_svc, label=f"SVC (AUC = {auc_svc:.3f})")
+plt.plot(fpr_rf, tpr_rf, label=f"RandomForest (AUC = {auc_rf:.3f})")
+plt.plot([0, 1], [0, 1], 'k--', label="Random (AUC = 0.5)")
+
+plt.title("ROC Curves – Logistic Regression, SVC, RandomForest")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate (Recall)")
+plt.legend(loc="lower right")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# ΑΣΚΗΣΗ 3: Threshold Tuning (0.5 vs 0.3)
+#   - Logistic Regression & SVC
+# ============================================================
+
+print("\n=== ΑΣΚΗΣΗ 3: Threshold Tuning (0.5 vs 0.3) για LogReg & SVC ===")
+
+def evaluate_threshold(y_true, y_proba, threshold, model_name):
+    """
+    Υπολογίζει accuracy, precision, recall, f1 για δοθέν threshold.
+    """
+    y_pred_thr = (y_proba >= threshold).astype(int)
+    acc = accuracy_score(y_true, y_pred_thr)
+    prec, rec, f1, _ = precision_recall_fscore_support(
+        y_true, y_pred_thr, average='binary', pos_label=1
+    )
+    print(f"\n{model_name} - Threshold = {threshold}")
+    print(f"Accuracy: {acc:.4f}")
+    print(f"Precision (class 1): {prec:.4f}")
+    print(f"Recall (class 1): {rec:.4f}")
+    print(f"F1-score (class 1): {f1:.4f}")
+    return acc, prec, rec, f1
+
+# Logistic Regression: threshold 0.5 vs 0.3
+print("\n--- Logistic Regression ---")
+lr_metrics_05 = evaluate_threshold(y_test, y_proba_lr, 0.5, "LogReg")
+lr_metrics_03 = evaluate_threshold(y_test, y_proba_lr, 0.3, "LogReg")
+
+# SVC: threshold 0.5 vs 0.3
+print("\n--- SVC ---")
+svc_metrics_05 = evaluate_threshold(y_test, y_proba_svc, 0.5, "SVC")
+svc_metrics_03 = evaluate_threshold(y_test, y_proba_svc, 0.3, "SVC")
+
+# Σύντομη σύγκριση για LogReg/SVC σε tabular μορφή
+metrics_df = pd.DataFrame(
+    {
+        "Model": ["LogReg", "LogReg", "SVC", "SVC"],
+        "Threshold": [0.5, 0.3, 0.5, 0.3],
+        "Accuracy": [lr_metrics_05[0], lr_metrics_03[0],
+                     svc_metrics_05[0], svc_metrics_03[0]],
+        "Precision": [lr_metrics_05[1], lr_metrics_03[1],
+                      svc_metrics_05[1], svc_metrics_03[1]],
+        "Recall": [lr_metrics_05[2], lr_metrics_03[2],
+                   svc_metrics_05[2], svc_metrics_03[2]],
+        "F1": [lr_metrics_05[3], lr_metrics_03[3],
+               svc_metrics_05[3], svc_metrics_03[3]],
+    }
+)
+
+print("\n=== Σύγκριση threshold 0.5 vs 0.3 (LogReg & SVC) ===")
+display(metrics_df)
+
+# ============================================================
+# ΑΣΚΗΣΗ 4: Feature Importance από RandomForest
+# ============================================================
+
+print("\n=== ΑΣΚΗΣΗ 4: Feature Importance από RandomForest ===")
+
+feature_importances = rf.feature_importances_
+feature_names = X.columns
+
+fi_df = pd.DataFrame({
+    "Feature": feature_names,
+    "Importance": feature_importances
+}).sort_values(by="Importance", ascending=False)
+
+print("\nTop 10 σημαντικότερα features (RandomForest):")
+display(fi_df.head(10))
+
+# Οπτικοποίηση των top-N feature importances
+top_n = 10
+plt.figure(figsize=(8, 5))
+sns.barplot(
+    data=fi_df.head(top_n),
+    x="Importance",
+    y="Feature",
+    palette="viridis"
+)
+plt.title(f"Top {top_n} Feature Importances (RandomForest)")
+plt.xlabel("Importance")
+plt.ylabel("Feature")
+plt.tight_layout()
+plt.show()
+
+print("\n=== Τέλος Notebook – Λύσεις Ασκήσεων Ολοκληρωμένες ===")
